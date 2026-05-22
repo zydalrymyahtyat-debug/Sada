@@ -1,36 +1,41 @@
 package com.example.data
 
 data class Post(
-    val id: String,
-    val authorName: String,
-    val authorAvatar: String,
-    val text: String,
-    val timestamp: String,
-    val likesCount: Int = 0,
-    val isLiked: Boolean = false,
-    val commentsCount: Int = 0,
-    val image: String? = null
-)
-
-data class Story(
-    val id: String,
-    val authorName: String,
-    val authorAvatar: String,
-    val image: String
+    var id: String = "",
+    var authorName: String = "",
+    var authorAvatar: String = "",
+    var text: String = "",
+    var timestamp: Long = System.currentTimeMillis(),
+    var likesCount: Int = 0,
+    var isLiked: Boolean = false,
+    var commentsCount: Int = 0,
+    var image: String? = null,
+    var uid: String = "",
+    var likes: List<String> = emptyList()
 )
 
 data class UserProfile(
-    val id: String,
-    val name: String,
-    val bio: String,
-    val avatar: String,
-    val savedPosts: List<String> = emptyList()
+    var id: String = "",
+    var name: String = "",
+    var bio: String = "أكتب ما بداخلي، ليتردد صداه.",
+    var avatar: String = "",
+    var savedPosts: List<String> = emptyList()
+)
+
+data class Story(
+    var id: String = "",
+    var authorName: String = "",
+    var authorAvatar: String = "",
+    var image: String = "",
+    var uid: String = "",
+    var timestamp: Long = System.currentTimeMillis()
 )
 
 data class ChatMessage(
-    val id: String,
-    val senderId: String,
-    val text: String,
-    val timestamp: String,
-    val isMe: Boolean
+    var id: String = "",
+    var senderId: String = "",
+    var text: String = "",
+    var timestamp: Long = System.currentTimeMillis(),
+    var senderName: String = "",
+    var senderAvatar: String = ""
 )

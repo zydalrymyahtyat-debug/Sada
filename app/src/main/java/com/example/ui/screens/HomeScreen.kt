@@ -1,5 +1,16 @@
 package com.example.ui.screens
 
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,11 +39,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import com.example.data.AppViewModel
 import com.example.data.Post
 import com.example.data.Story
 import com.example.ui.theme.PrimaryBlue
+import com.example.utils.ImageUtils
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(viewModel: AppViewModel) {
@@ -54,16 +69,23 @@ fun HomeScreen(viewModel: AppViewModel) {
         item {
             CreatePostCard(
                 userAvatar = user.avatar,
-                onPostSubmit = { text -> viewModel.addPost(text) }
+                onPostSubmit = { text, imageBase64 -> viewModel.addPost(text, imageBase64) }
             )
         }
 
         // Feed
-        items(posts) { post ->
-            PostCard(
-                post = post,
-                onLikeClick = { viewModel.toggleLike(post.id) }
-            )
+        items(posts, key = { it.id }) { post ->
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn() + slideInVertically(initialOffsetY = { 200 }),
+                exit = fadeOut()
+            ) {
+                PostCard(
+                    post = post,
+                    onLikeClick = { viewModel.toggleLike(post.id) },
+                    modifier = Modifier.animateItem()
+                )
+            }
         }
     }
 }
@@ -119,8 +141,16 @@ fun StoriesRow(stories: List<Story>) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreatePostCard(userAvatar: String, onPostSubmit: (String) -> Unit) {
+fun CreatePostCard(userAvatar: String, onPostSubmit: (String, String?) -> Unit) {
     var postText by remember { mutableStateOf("") }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var gettingImage by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        selectedImageUri = uri
+    }
     
     Card(
         modifier = Modifier
@@ -159,6 +189,26 @@ fun CreatePostCard(userAvatar: String, onPostSubmit: (String) -> Unit) {
                 )
             }
             
+            AnimatedVisibility(visible = selectedImageUri != null) {
+                Box(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+                    AsyncImage(
+                        model = selectedImageUri,
+                        contentDescription = "Selected Image",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    IconButton(
+                        onClick = { selectedImageUri = null },
+                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Text("X", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            
             Divider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             
             Row(
@@ -174,7 +224,7 @@ fun CreatePostCard(userAvatar: String, onPostSubmit: (String) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { /* Handle Image Upload dummy */ }.padding(8.dp)
+                        modifier = Modifier.clickable { galleryLauncher.launch("image/*") }.padding(8.dp)
                     ) {
                         Icon(Icons.Default.Image, contentDescription = "الصورة", tint = Color(0xFF2ECC71), modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(4.dp))
@@ -183,17 +233,27 @@ fun CreatePostCard(userAvatar: String, onPostSubmit: (String) -> Unit) {
                     Spacer(modifier = Modifier.width(16.dp))
                     Button(
                         onClick = { 
-                            if(postText.isNotBlank()) {
-                                onPostSubmit(postText)
-                                postText = ""
+                            if(postText.isNotBlank() || selectedImageUri != null) {
+                                gettingImage = true
+                                scope.launch {
+                                    val b64 = selectedImageUri?.let { ImageUtils.uriToBase64(context, it) }
+                                    onPostSubmit(postText, b64)
+                                    postText = ""
+                                    selectedImageUri = null
+                                    gettingImage = false
+                                }
                             }
                         },
-                        enabled = postText.isNotBlank(),
+                        enabled = (postText.isNotBlank() || selectedImageUri != null) && !gettingImage,
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                         shape = RoundedCornerShape(20.dp),
                         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
                     ) {
-                        Text("أرسل صداك", fontWeight = FontWeight.Bold)
+                        if (gettingImage) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp))
+                        } else {
+                            Text("أرسل صداك", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -202,9 +262,9 @@ fun CreatePostCard(userAvatar: String, onPostSubmit: (String) -> Unit) {
 }
 
 @Composable
-fun PostCard(post: Post, onLikeClick: () -> Unit) {
+fun PostCard(post: Post, onLikeClick: () -> Unit, modifier: Modifier = Modifier) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(16.dp),
@@ -231,7 +291,11 @@ fun PostCard(post: Post, onLikeClick: () -> Unit) {
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(text = post.authorName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text(text = post.timestamp, color = MaterialTheme.colorScheme.tertiary, fontSize = 12.sp)
+                        val timestampString = remember(post.timestamp) {
+                            val sdf = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+                            sdf.format(java.util.Date(post.timestamp))
+                        }
+                        Text(text = timestampString, color = MaterialTheme.colorScheme.tertiary, fontSize = 12.sp)
                     }
                 }
                 Icon(Icons.Default.MoreHoriz, contentDescription = "More", tint = MaterialTheme.colorScheme.tertiary)
@@ -246,18 +310,46 @@ fun PostCard(post: Post, onLikeClick: () -> Unit) {
                 lineHeight = 24.sp
             )
             
-            if (post.image != null) {
+            val imageData = post.image
+            if (imageData != null && imageData.isNotBlank()) {
                 Spacer(modifier = Modifier.height(12.dp))
-                AsyncImage(
-                    model = post.image,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.LightGray)
-                )
+                if (imageData.startsWith("http")) {
+                    AsyncImage(
+                        model = imageData,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.LightGray)
+                    )
+                } else {
+                    val decodedBytes = remember(imageData) { 
+                        try {
+                            Base64.decode(imageData, Base64.DEFAULT) 
+                        } catch(e: Exception) { 
+                            null 
+                        }
+                    }
+                    val bitmap = remember(decodedBytes) {
+                        if (decodedBytes != null) {
+                            BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                        } else null
+                    }
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.LightGray)
+                        )
+                    }
+                }
             }
             
             Spacer(modifier = Modifier.height(12.dp))

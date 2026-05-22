@@ -15,6 +15,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.example.ui.theme.PrimaryBlue
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -24,6 +28,8 @@ fun AuthScreen(onLoginSuccess: () -> Unit) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Box(
         modifier = Modifier
@@ -104,18 +110,60 @@ fun AuthScreen(onLoginSuccess: () -> Unit) {
                 )
 
                 Button(
-                    onClick = { onLoginSuccess() },
+                    onClick = { 
+                        if (email.isEmpty() || password.isEmpty()) {
+                            Toast.makeText(context, "الرجاء إدخال البيانات", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        isLoading = true
+                        val auth = FirebaseAuth.getInstance()
+                        if (isLoginMode) {
+                            auth.signInWithEmailAndPassword(email, password)
+                                .addOnCompleteListener { task ->
+                                    isLoading = false
+                                    if (task.isSuccessful) {
+                                        onLoginSuccess()
+                                    } else {
+                                        Toast.makeText(context, "خطأ: ${task.exception?.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                        } else {
+                            auth.createUserWithEmailAndPassword(email, password)
+                                .addOnCompleteListener { task ->
+                                    isLoading = false
+                                    if (task.isSuccessful) {
+                                        val user = task.result?.user
+                                        val profile = hashMapOf(
+                                            "name" to name.ifEmpty { "مستخدم جديد" },
+                                            "bio" to "أكتب ما بداخلي، ليتردد صداه.",
+                                            "avatar" to "https://i.pravatar.cc/150?u=${user?.uid}"
+                                        )
+                                        user?.let {
+                                            FirebaseFirestore.getInstance().collection("users").document(it.uid).set(profile)
+                                        }
+                                        onLoginSuccess()
+                                    } else {
+                                        Toast.makeText(context, "خطأ: ${task.exception?.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                    enabled = !isLoading
                 ) {
-                    Text(
-                        text = if (isLoginMode) "دخول" else "إنشاء حساب",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (isLoading) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text(
+                            text = if (isLoginMode) "دخول" else "إنشاء حساب",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))

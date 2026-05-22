@@ -61,7 +61,9 @@ fun HomeScreen(viewModel: AppViewModel) {
     ) {
         // Stories Section
         item {
-            StoriesRow(stories = stories)
+            StoriesRow(stories = stories) { base64str ->
+                viewModel.addStory(base64str)
+            }
             Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
 
@@ -91,7 +93,25 @@ fun HomeScreen(viewModel: AppViewModel) {
 }
 
 @Composable
-fun StoriesRow(stories: List<Story>) {
+fun StoriesRow(stories: List<Story>, onAddStory: (String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isUploading by remember { mutableStateOf(false) }
+
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            isUploading = true
+            scope.launch {
+                val b64 = ImageUtils.uriToBase64(context, uri)
+                if (b64 != null) {
+                    val finalStr = "data:image/jpeg;base64,$b64"
+                    onAddStory(finalStr)
+                }
+                isUploading = false
+            }
+        }
+    }
+
     LazyRow(
         modifier = Modifier
             .fillMaxWidth()
@@ -103,7 +123,11 @@ fun StoriesRow(stories: List<Story>) {
         items(stories) { story ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.width(65.dp)
+                modifier = Modifier.width(65.dp).clickable {
+                    if (story.id == "s1" && !isUploading) {
+                        galleryLauncher.launch("image/*")
+                    }
+                }
             ) {
                 if (story.id == "s1") {
                     Box(
@@ -113,19 +137,48 @@ fun StoriesRow(stories: List<Story>) {
                             .padding(4.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Story", tint = PrimaryBlue, modifier = Modifier.size(30.dp))
+                        if (isUploading) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = PrimaryBlue)
+                        } else {
+                            Icon(Icons.Default.Add, contentDescription = "Add Story", tint = PrimaryBlue, modifier = Modifier.size(30.dp))
+                        }
                     }
                 } else {
-                    AsyncImage(
-                        model = story.image.ifEmpty { story.authorAvatar },
-                        contentDescription = "Story",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(60.dp)
-                            .border(3.dp, PrimaryBlue, CircleShape)
-                            .padding(3.dp)
-                            .clip(CircleShape)
-                    )
+                    val fallback = if (story.authorAvatar.isNotBlank()) story.authorAvatar else "https://via.placeholder.com/150"
+                    
+                    if (story.image.startsWith("data:image")) {
+                        val base64Str = story.image.substringAfter(",")
+                        val decodedBytes = remember(base64Str) { 
+                            try { Base64.decode(base64Str, Base64.DEFAULT) } catch(e: Exception) { null }
+                        }
+                        val bitmap = remember(decodedBytes) {
+                            decodedBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                        }
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Story",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(60.dp)
+                                    .border(3.dp, PrimaryBlue, CircleShape)
+                                    .clip(CircleShape)
+                            )
+                        } else {
+                            Box(modifier = Modifier.size(60.dp).background(Color.LightGray, CircleShape))
+                        }
+                    } else {
+                        AsyncImage(
+                            model = story.image.ifEmpty { fallback },
+                            contentDescription = "Story",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(60.dp)
+                                .border(3.dp, PrimaryBlue, CircleShape)
+                                .padding(3.dp)
+                                .clip(CircleShape)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -163,7 +216,7 @@ fun CreatePostCard(userAvatar: String, onPostSubmit: (String, String?) -> Unit) 
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 AsyncImage(
-                    model = userAvatar,
+                    model = if (userAvatar.isNotBlank()) userAvatar else "https://via.placeholder.com/150",
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -280,7 +333,7 @@ fun PostCard(post: Post, onLikeClick: () -> Unit, modifier: Modifier = Modifier)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AsyncImage(
-                        model = post.authorAvatar,
+                        model = if (post.authorAvatar.isNotBlank()) post.authorAvatar else "https://via.placeholder.com/150",
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -292,8 +345,10 @@ fun PostCard(post: Post, onLikeClick: () -> Unit, modifier: Modifier = Modifier)
                     Column {
                         Text(text = post.authorName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         val timestampString = remember(post.timestamp) {
-                            val sdf = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
-                            sdf.format(java.util.Date(post.timestamp))
+                            if (post.timestamp != null) {
+                                val sdf = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+                                sdf.format(post.timestamp!!)
+                            } else "الآن"
                         }
                         Text(text = timestampString, color = MaterialTheme.colorScheme.tertiary, fontSize = 12.sp)
                     }
@@ -325,9 +380,10 @@ fun PostCard(post: Post, onLikeClick: () -> Unit, modifier: Modifier = Modifier)
                             .background(Color.LightGray)
                     )
                 } else {
-                    val decodedBytes = remember(imageData) { 
+                    val base64Str = if (imageData.startsWith("data:image")) imageData.substringAfter(",") else imageData
+                    val decodedBytes = remember(base64Str) { 
                         try {
-                            Base64.decode(imageData, Base64.DEFAULT) 
+                            Base64.decode(base64Str, Base64.DEFAULT) 
                         } catch(e: Exception) { 
                             null 
                         }

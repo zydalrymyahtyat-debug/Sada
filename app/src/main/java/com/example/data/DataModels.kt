@@ -1,13 +1,17 @@
 package com.example.data
 
+import com.google.firebase.firestore.Exclude
+import com.google.firebase.firestore.ServerTimestamp
+import java.util.Date
+
 data class Post(
-    var id: String = "",
+    @get:Exclude @set:Exclude var id: String = "",
     var authorName: String = "",
     var authorAvatar: String = "",
     var text: String = "",
-    var timestamp: Long = System.currentTimeMillis(),
-    var likesCount: Int = 0,
-    var isLiked: Boolean = false,
+    @ServerTimestamp var timestamp: Date? = null,
+    @get:Exclude @set:Exclude var likesCount: Int = 0,
+    @get:Exclude @set:Exclude var isLiked: Boolean = false,
     var commentsCount: Int = 0,
     var image: String? = null,
     var uid: String = "",
@@ -15,7 +19,7 @@ data class Post(
 )
 
 data class UserProfile(
-    var id: String = "",
+    @get:Exclude @set:Exclude var id: String = "",
     var name: String = "",
     var bio: String = "أكتب ما بداخلي، ليتردد صداه.",
     var avatar: String = "",
@@ -23,19 +27,19 @@ data class UserProfile(
 )
 
 data class Story(
-    var id: String = "",
+    @get:Exclude @set:Exclude var id: String = "",
     var authorName: String = "",
     var authorAvatar: String = "",
     var image: String = "",
     var uid: String = "",
-    var timestamp: Long = System.currentTimeMillis()
+    @ServerTimestamp var timestamp: Date? = null
 )
 
 data class ChatMessage(
-    var id: String = "",
+    @get:Exclude @set:Exclude var id: String = "",
     var senderId: String = "",
     var text: String = "",
-    var timestamp: Long = System.currentTimeMillis(),
+    @ServerTimestamp var timestamp: Date? = null,
     var senderName: String = "",
     var senderAvatar: String = ""
 )

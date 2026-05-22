@@ -7,7 +7,6 @@ import com.google.firebase.firestore.Query
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 
 class AppViewModel : ViewModel() {
     private val db = FirebaseFirestore.getInstance()
@@ -37,9 +36,14 @@ class AppViewModel : ViewModel() {
                 // Fetch profile
                 db.collection("users").document(user.uid).addSnapshotListener { snapshot, error ->
                     if (error == null && snapshot != null && snapshot.exists()) {
-                        val profile = snapshot.toObject(UserProfile::class.java)
-                        if (profile != null) {
-                            _currentUser.value = profile.copy(id = snapshot.id)
+                        try {
+                            val profile = snapshot.toObject(UserProfile::class.java)
+                            if (profile != null) {
+                                profile.id = snapshot.id
+                                _currentUser.value = profile
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     }
                 }
@@ -56,33 +60,41 @@ class AppViewModel : ViewModel() {
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error == null && snapshot != null) {
-                    val postsList = snapshot.documents.mapNotNull { doc ->
-                        val post = doc.toObject(Post::class.java)
-                        post?.let {
-                            it.copy(
-                                id = doc.id,
-                                isLiked = it.likes.contains(uid),
-                                likesCount = it.likes.size
-                            )
+                    try {
+                        val postsList = snapshot.documents.mapNotNull { doc ->
+                            val post = doc.toObject(Post::class.java)
+                            post?.apply {
+                                id = doc.id
+                                isLiked = likes.contains(uid)
+                                likesCount = likes.size
+                            }
                         }
+                        _posts.value = postsList
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
-                    _posts.value = postsList
                 }
             }
     }
 
     private fun fetchStories() {
-        val yesterday = System.currentTimeMillis() - (24 * 60 * 60 * 1000)
+        val yesterdayDate = java.util.Date(System.currentTimeMillis() - (24 * 60 * 60 * 1000))
         db.collection("stories")
-            .whereGreaterThan("timestamp", yesterday)
+            .whereGreaterThanOrEqualTo("timestamp", yesterdayDate)
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error == null && snapshot != null) {
-                    val defaultStory = Story(id = "s1", authorName = "قصتي", image = "")
-                    val storiesList = snapshot.documents.mapNotNull { it.toObject(Story::class.java)?.copy(id = it.id) }
-                    
-                    val distinctStories = storiesList.distinctBy { it.uid }
-                    _stories.value = listOf(defaultStory) + distinctStories
+                    try {
+                        val defaultStory = Story(id = "s1", authorName = "قصتي", image = "")
+                        val storiesList = snapshot.documents.mapNotNull { doc ->
+                            doc.toObject(Story::class.java)?.apply { id = doc.id } 
+                        }
+                        
+                        val distinctStories = storiesList.distinctBy { it.uid }
+                        _stories.value = listOf(defaultStory) + distinctStories
+                    } catch(e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
     }
@@ -97,10 +109,28 @@ class AppViewModel : ViewModel() {
             text = text,
             image = imageBase64,
             uid = user.uid,
-            timestamp = System.currentTimeMillis()
+            timestamp = null
         )
         
         db.collection("posts").add(newPost)
+    }
+
+    fun addStory(imageBase64: String) {
+        val user = auth.currentUser ?: return
+        val profile = _currentUser.value
+        val story = Story(
+            authorName = profile.name.ifEmpty { "مستخدم" },
+            authorAvatar = profile.avatar,
+            image = imageBase64,
+            uid = user.uid,
+            timestamp = null
+        )
+        db.collection("stories").add(story)
+    }
+
+    fun updateAvatar(avatarBase64: String) {
+        val uid = auth.currentUser?.uid ?: return
+        db.collection("users").document(uid).update("avatar", avatarBase64)
     }
 
     fun toggleLike(postId: String) {

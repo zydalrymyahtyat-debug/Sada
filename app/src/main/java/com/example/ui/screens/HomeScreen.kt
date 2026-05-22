@@ -4,8 +4,15 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,6 +21,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -22,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Image
@@ -33,7 +42,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,19 +57,49 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.example.data.AppViewModel
 import com.example.data.Post
 import com.example.data.Story
 import com.example.ui.theme.PrimaryBlue
 import com.example.utils.ImageUtils
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun HomeScreen(viewModel: AppViewModel) {
+fun HomeScreen(
+    viewModel: AppViewModel,
+    onNavigateToCreatePost: () -> Unit = {},
+    showCreatePostDialog: Boolean = false,
+    onDismissCreatePost: () -> Unit = {}
+) {
     val posts by viewModel.posts.collectAsState()
     val stories by viewModel.stories.collectAsState()
     val user by viewModel.currentUser.collectAsState()
+
+    var fullScreenImage by remember { mutableStateOf<String?>(null) }
+
+    if (showCreatePostDialog) {
+        Dialog(onDismissRequest = onDismissCreatePost) {
+            Surface(shape = RoundedCornerShape(16.dp)) {
+                CreatePostCard(
+                    userAvatar = user.avatar,
+                    onPostSubmit = { text, imageBase64 -> 
+                        viewModel.addPost(text, imageBase64)
+                        onDismissCreatePost()
+                    }
+                )
+            }
+        }
+    }
+
+    if (fullScreenImage != null) {
+        FullScreenImageViewer(imageUrl = fullScreenImage!!) {
+            fullScreenImage = null
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -67,14 +113,6 @@ fun HomeScreen(viewModel: AppViewModel) {
             Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
 
-        // Post Creation Section
-        item {
-            CreatePostCard(
-                userAvatar = user.avatar,
-                onPostSubmit = { text, imageBase64 -> viewModel.addPost(text, imageBase64) }
-            )
-        }
-
         // Feed
         items(posts, key = { it.id }) { post ->
             AnimatedVisibility(
@@ -85,6 +123,7 @@ fun HomeScreen(viewModel: AppViewModel) {
                 PostCard(
                     post = post,
                     onLikeClick = { viewModel.toggleLike(post.id) },
+                    onImageClick = { fullScreenImage = it },
                     modifier = Modifier.animateItem()
                 )
             }
@@ -98,7 +137,7 @@ fun StoriesRow(stories: List<Story>, onAddStory: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var isUploading by remember { mutableStateOf(false) }
 
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             isUploading = true
             scope.launch {
@@ -125,7 +164,7 @@ fun StoriesRow(stories: List<Story>, onAddStory: (String) -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.width(65.dp).clickable {
                     if (story.id == "s1" && !isUploading) {
-                        galleryLauncher.launch("image/*")
+                        galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     }
                 }
             ) {
@@ -201,7 +240,7 @@ fun CreatePostCard(userAvatar: String, onPostSubmit: (String, String?) -> Unit) 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         selectedImageUri = uri
     }
     
@@ -277,7 +316,7 @@ fun CreatePostCard(userAvatar: String, onPostSubmit: (String, String?) -> Unit) 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { galleryLauncher.launch("image/*") }.padding(8.dp)
+                        modifier = Modifier.clickable { galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }.padding(8.dp)
                     ) {
                         Icon(Icons.Default.Image, contentDescription = "الصورة", tint = Color(0xFF2ECC71), modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(4.dp))
@@ -315,16 +354,58 @@ fun CreatePostCard(userAvatar: String, onPostSubmit: (String, String?) -> Unit) 
 }
 
 @Composable
-fun PostCard(post: Post, onLikeClick: () -> Unit, modifier: Modifier = Modifier) {
-    Card(
+fun PostCard(post: Post, onLikeClick: () -> Unit, onImageClick: (String) -> Unit = {}, modifier: Modifier = Modifier) {
+    var isNew by remember { mutableStateOf(false) }
+
+    LaunchedEffect(post.id) {
+        val now = System.currentTimeMillis()
+        val postTime = post.timestamp?.time ?: now
+        if (now - postTime < 5000) {
+            isNew = true
+            delay(3000)
+            isNew = false
+        }
+    }
+
+    val infiniteTransition = rememberInfiniteTransition()
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f, 
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing), RepeatMode.Restart)
+    )
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        if (isNew) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(19.dp))
+                    .drawWithContent {
+                        rotate(rotation) {
+                            val maxDimension = maxOf(size.width, size.height) * 1.5f
+                            drawRect(
+                                brush = Brush.sweepGradient(
+                                    colors = listOf(PrimaryBlue, Color.Yellow, Color.Cyan, PrimaryBlue)
+                                ),
+                                size = androidx.compose.ui.geometry.Size(maxDimension, maxDimension),
+                                topLeft = androidx.compose.ui.geometry.Offset(-maxDimension/4, -maxDimension/4)
+                            )
+                        }
+                    }
+            )
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(3.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -378,6 +459,7 @@ fun PostCard(post: Post, onLikeClick: () -> Unit, modifier: Modifier = Modifier)
                             .height(200.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(Color.LightGray)
+                            .clickable { onImageClick(imageData) }
                     )
                 } else {
                     val base64Str = if (imageData.startsWith("data:image")) imageData.substringAfter(",") else imageData
@@ -403,6 +485,7 @@ fun PostCard(post: Post, onLikeClick: () -> Unit, modifier: Modifier = Modifier)
                                 .height(200.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color.LightGray)
+                                .clickable { onImageClick(imageData) }
                         )
                     }
                 }
@@ -464,6 +547,98 @@ fun PostCard(post: Post, onLikeClick: () -> Unit, modifier: Modifier = Modifier)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("مشاركة", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 }
+            }
+        }
+    }
+}
+}
+
+@Composable
+fun FullScreenImageViewer(imageUrl: String, onDismiss: () -> Unit) {
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            if (imageUrl.startsWith("http")) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(1f, 5f)
+                                offset = if (scale > 1f) offset + pan else androidx.compose.ui.geometry.Offset.Zero
+                            }
+                        }
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y
+                        )
+                )
+            } else {
+                val base64Str = if (imageUrl.startsWith("data:image")) imageUrl.substringAfter(",") else imageUrl
+                val decodedBytes = remember(base64Str) { try { Base64.decode(base64Str, Base64.DEFAULT) } catch(e:Exception) { null } }
+                val bitmap = remember(decodedBytes) { decodedBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 5f)
+                                    offset = if (scale > 1f) offset + pan else androidx.compose.ui.geometry.Offset.Zero
+                                }
+                            }
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offset.x,
+                                translationY = offset.y
+                            )
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(32.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "اغلاق", tint = Color.White)
+            }
+
+            // Downloader button
+            val context = LocalContext.current
+            val scope = rememberCoroutineScope()
+            IconButton(
+                onClick = { 
+                    scope.launch {
+                        ImageUtils.saveImageToGallery(context, imageUrl)
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(32.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+            ) {
+                Icon(Icons.Outlined.Share, contentDescription = "تحميل", tint = Color.White, modifier = Modifier.rotate(180f))
             }
         }
     }

@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
         
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
+            MyApplicationTheme(dynamicColor = false) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     val auth = FirebaseAuth.getInstance()
                     var isLoggedIn by remember { mutableStateOf(auth.currentUser != null) }

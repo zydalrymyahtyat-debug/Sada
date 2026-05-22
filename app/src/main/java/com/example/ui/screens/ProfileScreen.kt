@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -46,7 +47,7 @@ fun ProfileScreen(viewModel: AppViewModel) {
     val scope = rememberCoroutineScope()
     var isUpdating by remember { mutableStateOf(false) }
 
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) {
             isUpdating = true
             scope.launch {
@@ -123,7 +124,7 @@ fun ProfileScreen(viewModel: AppViewModel) {
                                 .clip(CircleShape)
                                 .background(PrimaryBlue)
                                 .border(2.dp, Color.White, CircleShape)
-                                .clickable { galleryLauncher.launch("image/*") },
+                                .clickable { galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                             contentAlignment = Alignment.Center
                         ) {
                             if (isUpdating) {

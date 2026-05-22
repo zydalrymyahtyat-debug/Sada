@@ -2,11 +2,11 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val PrimaryBlue = Color(0xFF195E83)
-val BackgroundLight = Color(0xFFE3F2FD)
-val TextDark = Color(0xFF2C3E50)
-val TextLight = Color(0xFF7F8C8D)
-val DangerRed = Color(0xFFE74C3C)
+val PrimaryBlue = Color(0xFFC65818) // Aliased to orange for now, to affect whole app
+val BackgroundLight = Color(0xFFF7F9FA) // White-ish gray background
+val TextDark = Color(0xFF1E1E1E)
+val TextLight = Color(0xFF657786)
+val DangerRed = Color(0xFFE0245E)
 val GoldColor = Color(0xFFC5A059)
 val White = Color(0xFFFFFFFF)
 
